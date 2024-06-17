@@ -17,14 +17,6 @@
 
 RB_DECLARE_ALL(char);
 
-#ifndef TYCHE_NO_SYSCALL
-#define RB_SIZE 100
-static char read_queue_buff[RB_SIZE];
-static rb_char_t read_queue;
-static int read_queue_is_init = 0;
-
-#else
-
 #define MSG_BUFFER_SIZE 1048
 
 /// The redis enclave shared memory gets typecasted to this.
@@ -39,10 +31,18 @@ typedef struct redis_app_t {
   char from_buffer[MSG_BUFFER_SIZE];
 } redis_app_t;
 
+
+#ifdef TYCHE_NO_SYSCALL
+
 // This is all part of the shared state introduced by tychools.
 // The untrusted code is responsible for initializing the channels.
 static redis_app_t * app = (redis_app_t*) TYCHE_SHARED_ADDR;
 static int read_queue_is_init = 1;
+#else
+
+static redis_app_t __gbl_app = {0};
+static redis_app_t * app = &(__gbl_app);
+static int read_queue_is_init = 0;
 #endif
 
 enum tyche_test_state {
@@ -110,19 +110,40 @@ int tyche_listen(int fd) {
     return 0;
 }
 
+#ifdef TYCHE_DO_INIT
+static const char* app_mem_name = "/app_shared";
+static const size_t app_size = 0x2000;
+static const char* mempool_name = "/mempool_shared";
+static const size_t mempool_size = 0x640000;
+#endif
+
+void tyche_init_shared_mem(void) {
+#ifdef TYCHE_DO_INIT
+    // Just need to mount the correct volumes.
+    int shm_fd_app = shm_open(app_mem_name, O_RDWR, 0666);
+    void *ptr_app = __mmap2((void*)TYCHE_SHARED_ADDR, app_size,
+        PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd_app, 0);
+    int shm_fd_mem = shm_open(mempool_name, O_RDWR, 0666);
+    void* ptr_mem = __mmap2((void*)0x700000, mempool_size,
+        PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd_mem, 0);
+#endif
+}
+
 int tyche_accept(int fd) {
     // Initialize read queue so that the socket has some content
 
 #ifndef TYCHE_NO_SYSCALL
     if (!read_queue_is_init) {
-        memset(read_queue_buff, 0, sizeof(char) * RB_SIZE);
-        rb_char_init(&read_queue, RB_SIZE, read_queue_buff);
+        memset(app->to_buffer, 0, sizeof(char) * MSG_BUFFER_SIZE);
+        memset(app->from_buffer, 0, sizeof(char) * MSG_BUFFER_SIZE);
+        rb_char_init(&(app->to_redis), MSG_BUFFER_SIZE, app->to_buffer);
+        rb_char_init(&(app->from_redis), MSG_BUFFER_SIZE, app->from_buffer);
         read_queue_is_init = 1;
 
         // Put initial commands
         char *cmds = "PING\r\nSET A 666\r\nCOMMAND\r\nGET A\r\n";
         printf("Commands:\n%s", cmds);
-        rb_char_write_n(&read_queue, strlen(cmds), cmds);
+        rb_char_write_n(&(app->to_redis), strlen(cmds), cmds);
     }
 #endif
 
@@ -161,7 +182,8 @@ int tyche_select(int n, fd_set *restrict rfds, fd_set *restrict wfds) {
     //printf("Read set:\n");
     for (int i = 0; i < 32; i++) {
         if (FD_ISSET(i, rfds)) {
-            //printf("  %d\n", i);
+            //printf("  %dTyche connection is set!\n", i);
+
         }
     }
     //printf("Write set:\n");
@@ -182,21 +204,7 @@ int tyche_select(int n, fd_set *restrict rfds, fd_set *restrict wfds) {
         //printf("Connection ready to accept\n");
         return 1;
     } else {
-        unsigned long long count = 0;
-
-#ifndef TYCHE_NO_SYSCALL
-        while(rb_char_is_empty(&read_queue)) {
-            count += 1;
-            if (count > 1000000) {
-                printf("No more messages, exiting\n");
-                while (1) {
-                    exit(0);
-                }
-            }
-        }
-#else
         while (rb_char_is_empty(&(app->to_redis))) {}
-#endif
         // We got some messages on the channel!
         FD_SET(TYCHE_CONNECTION_FD, rfds);
         //printf("Channel ready to be read\n");
@@ -219,10 +227,8 @@ int tyche_select(int n, fd_set *restrict rfds, fd_set *restrict wfds) {
 size_t tyche_read(int fd, void *buff, size_t count) {
 #ifndef TYCHE_NO_SYSCALL
   printf("Tyche read: %d, count: %d\n", fd, count);
-  int ret = rb_char_read_n(&read_queue, (int) count, (char *)buff);
-#else
-    int ret = rb_char_read_alias_n(&(app->to_redis), app->to_buffer, (int) count, (char *)buff);
 #endif
+    int ret = rb_char_read_alias_n(&(app->to_redis), app->to_buffer, (int) count, (char *)buff);
     if (ret == FAILURE) {
       tyche_suicide(101);
       errno = EAGAIN;

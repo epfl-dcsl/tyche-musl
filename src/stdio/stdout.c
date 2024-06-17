@@ -4,6 +4,9 @@
 #undef stdout
 
 size_t _tyche_stdout_write(FILE *f, const unsigned char *buf, size_t len) {
+#ifdef TYCHE_DO_INIT
+  return __stdout_write(f, buf, len);
+#endif
     // Just drop the text
     return len;
 }

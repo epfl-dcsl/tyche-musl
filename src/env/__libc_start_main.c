@@ -78,10 +78,8 @@ int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv,
 	void (*init_dummy)(), void(*fini_dummy)(), void(*ldso_dummy)())
 {
 
-#ifdef TYCHE_NO_SYSCALL
 	argv = TYCHE_ARGV;
 	argc = 1;
-#endif
 
 	char **envp = argv+argc+1;
 
@@ -101,6 +99,9 @@ static int libc_start_main_stage2(int (*main)(int,char **,char **), int argc, ch
 {
 	char **envp = argv+argc+1;
 	__libc_start_init();
+
+  // Before passing, initialize the state.
+  tyche_init_shared_mem();
 
 	/* Pass control to the application */
 	exit(main(argc, argv, envp));

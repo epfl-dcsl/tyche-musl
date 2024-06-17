@@ -8,6 +8,8 @@
 
 // Comment/uncomment to enable or disable syscalls
 #define TYCHE_NO_SYSCALL
+// Uncomment to run redis-musl outside of tyche using fork-exec
+//#define TYCHE_DO_INIT
 
 #define TYCHE_SOCKET_FD 14
 #define TYCHE_CONNECTION_FD 15
@@ -32,5 +34,7 @@ int tyche_munmap(void* start, size_t len);
 size_t tyche_brk(void* end);
 ssize_t tyche_writev(int fd, const struct iovec* iov, int count);
 void tyche_suicide(unsigned int v);
+
+void tyche_init_shared_mem(void);
 
 #endif

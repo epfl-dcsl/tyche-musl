@@ -288,6 +288,8 @@ static char mempool[NB_PAGES * PAGE_SIZE] __attribute__((aligned(0x1000))) = {0}
 static int mempool_next_free = 0;
 static int mempool_is_init = 0;
 
+static int nb_pages_freed = 0;
+
 static size_t align_page_up(size_t val) {
     return (val + (PAGE_SIZE - 1)) & ~(PAGE_SIZE - 1);
 }
@@ -300,6 +302,10 @@ static void *alloc_segment(size_t len) {
     nb_pages = (len >> 12);
     if ((mempool_next_free + nb_pages) >= NB_PAGES) {
       // Running out of memory.
+#ifdef TYCHE_DO_INIT
+      printf("About to fail memory allocation: %d needed, but limit is %d\n", mempool_next_free + nb_pages, NB_PAGES);
+      printf("The number of frees we have seen %d\n", nb_pages_freed);
+#endif
       tyche_suicide(0xb00b);
     }
     res = (void*) &mempool[(mempool_next_free) * PAGE_SIZE];
@@ -325,6 +331,7 @@ void *tyche_mmap(void *start, size_t len, int prot, int flags, int fd, off_t off
 int tyche_munmap(void *start, size_t len) { 
     //TODO implement.
     // TODO: insert a new node here.
+    nb_pages_freed += (len / 0x1000);
     return 0;
 }
 

@@ -16,9 +16,9 @@ int select(int n, fd_set *restrict rfds, fd_set *restrict wfds, fd_set *restrict
 	long ns;
 	const time_t max_time = (1ULL<<8*sizeof(time_t)-1)-1;
     int ret;
-    printf("select(nfds: %d, rfds: %p, wfds: %p)\n", n, rfds, wfds);
+    //printf("select(nfds: %d, rfds: %p, wfds: %p)\n", n, rfds, wfds);
     ret = tyche_select(n, rfds, wfds);
-    printf("return value: %d\n", ret);
+    //printf("return value: %d\n", ret);
     return ret;
 
 	if (s<0 || us<0) return __syscall_ret(-EINVAL);

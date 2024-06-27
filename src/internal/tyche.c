@@ -13,6 +13,7 @@
 #include "string.h"
 #include "syscall.h"
 #include "tyche_rb.h"
+#include "stdbool.h"
 
 
 RB_DECLARE_ALL(char);
@@ -114,8 +115,16 @@ int tyche_listen(int fd) {
 static const char* app_mem_name = "/app_shared";
 static const size_t app_size = 0x2000;
 static const char* mempool_name = "/mempool_shared";
-static const size_t mempool_size = 0x640000;
 #endif
+static const size_t mempool_size = 0x640000;
+
+
+// —————————————————————————— API of tyche backend —————————————————————————— //
+
+// Helper functions.
+void memory_init(void);
+void* memory_mmap(size_t size);
+void memory_munmap(void* ptr, size_t size);
 
 void tyche_init_shared_mem(void) {
 #ifdef TYCHE_DO_INIT
@@ -127,6 +136,7 @@ void tyche_init_shared_mem(void) {
     void* ptr_mem = __mmap2((void*)0x700000, mempool_size,
         PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd_mem, 0);
 #endif
+    memory_init();
 }
 
 int tyche_accept(int fd) {
@@ -276,6 +286,7 @@ void tyche_suicide(unsigned int v) {
 
 #define PAGE_SIZE (0x1000)
 #define NB_PAGES  (800 * 2)
+#define BITMAP_SIZE (NB_PAGES/8)
 
 #ifdef TYCHE_NO_SYSCALL
 static char *mempool = (char*) 0x700000;
@@ -324,7 +335,8 @@ void *tyche_mmap(void *start, size_t len, int prot, int flags, int fd, off_t off
       tyche_suicide(0xB00B1);
       return NULL;
     }
-    void* res = alloc_segment(len);
+    //void* res = alloc_segment(len);
+    void* res = memory_mmap(len);
     return res;
 }
 
@@ -332,6 +344,7 @@ int tyche_munmap(void *start, size_t len) {
     //TODO implement.
     // TODO: insert a new node here.
     nb_pages_freed += (len / 0x1000);
+    memory_munmap(start, len);
     return 0;
 }
 
@@ -357,5 +370,69 @@ size_t tyche_brk(void *end) {
     } else {
         brk_cursor = end;
         return (size_t)end;
+    }
+}
+// ————— Alternative mmap implementation to avoid running out of memory ————— //
+
+uint8_t bitmap[BITMAP_SIZE];
+
+void memory_init() {
+    memset(bitmap, 0, sizeof(bitmap)); // All pages are initially free
+}
+
+void set_bit(size_t bit_index) {
+    bitmap[bit_index / 8] |= (1 << (bit_index % 8));
+}
+
+void clear_bit(size_t bit_index) {
+    bitmap[bit_index / 8] &= ~(1 << (bit_index % 8));
+}
+
+bool is_bit_set(size_t bit_index) {
+    return bitmap[bit_index / 8] & (1 << (bit_index % 8));
+}
+
+void* memory_mmap(size_t size) {
+    size_t pages_needed = (size + PAGE_SIZE - 1) / PAGE_SIZE; // Round up to the nearest page count
+    size_t contiguous_pages = 0;
+    size_t start_page = 0;
+
+    // Find a contiguous range of free pages
+    for (size_t i = 0; i < NB_PAGES; i++) {
+        if (!is_bit_set(i)) {
+            if (contiguous_pages == 0) {
+                start_page = i;
+            }
+            contiguous_pages++;
+            if (contiguous_pages == pages_needed) {
+                break;
+            }
+        } else {
+            contiguous_pages = 0;
+        }
+    }
+
+    if (contiguous_pages < pages_needed) {
+        return NULL; // Not enough contiguous memory
+    }
+
+    // Mark the pages as allocated
+    for (size_t i = start_page; i < start_page + pages_needed; i++) {
+        set_bit(i);
+    }
+
+    return mempool + (start_page * PAGE_SIZE);
+}
+
+void memory_munmap(void* ptr, size_t size) {
+    if (ptr == NULL || size == 0) return;
+
+    size_t offset = (char*)ptr - mempool;
+    size_t start_page = offset / PAGE_SIZE;
+    size_t pages_to_free = (size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    // Mark the pages as free
+    for (size_t i = start_page; i < start_page + pages_to_free; i++) {
+        clear_bit(i);
     }
 }

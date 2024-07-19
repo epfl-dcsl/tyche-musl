@@ -14,7 +14,9 @@ weak_alias(dummy, __vm_wait);
 
 void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 {
+#ifndef TYCHE_RAW_MEM_SYSCALL
     return tyche_mmap(start, len, prot, flags, fd, off);
+#else
 	long ret;
 	if (off & OFF_MASK) {
 		errno = EINVAL;
@@ -36,6 +38,7 @@ void *__mmap(void *start, size_t len, int prot, int flags, int fd, off_t off)
 	if (ret == -EPERM && !start && (flags&MAP_ANON) && !(flags&MAP_FIXED))
 		ret = -ENOMEM;
 	return (void *)__syscall_ret(ret);
+#endif
 }
 
 void* __mmap2(void *start, size_t len, int prot, int flags, int fd, off_t off)

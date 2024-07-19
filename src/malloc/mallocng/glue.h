@@ -32,7 +32,6 @@
 #define assert(x) do { if (!(x)) a_crash(); } while(0)
 #endif
 
-/* #define brk(p) ((uintptr_t)__syscall(SYS_brk, p)) */
 #define brk(p) (tyche_brk((void *)p))
 
 #define mmap __mmap
@@ -43,11 +42,15 @@
 
 static inline uint64_t get_random_secret()
 {
+#ifdef TYCHE_NO_SYSCALL
+  return 0x12345;
+#else
 	uint64_t secret = (uintptr_t)&secret * 1103515245;
 	for (size_t i=0; libc.auxv[i]; i+=2)
 		if (libc.auxv[i]==AT_RANDOM)
 			memcpy(&secret, (char *)libc.auxv[i+1]+8, sizeof secret);
 	return secret;
+#endif
 }
 
 #ifndef PAGESIZE

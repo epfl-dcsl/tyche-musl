@@ -1,4 +1,7 @@
 // Changes to accomodate running on top of Tyche
+#ifdef TYCHE_RAW_MEM_SYSCALL
+#include <assert.h>
+#endif
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/mman.h>
@@ -325,6 +328,10 @@ static void *alloc_segment(size_t len) {
 }
 
 void *tyche_mmap(void *start, size_t len, int prot, int flags, int fd, off_t off) {
+#ifdef TYCHE_RAW_MEM_SYSCALL
+  return __mmap2(start, len, prot, flags, fd, off);
+#endif
+
     // We just ignore PROT_NONE as it is used only for guard pages
     if (prot == PROT_NONE) {
         return start;
@@ -341,6 +348,9 @@ void *tyche_mmap(void *start, size_t len, int prot, int flags, int fd, off_t off
 }
 
 int tyche_munmap(void *start, size_t len) { 
+#ifdef TYCHE_RAW_MEM_SYSCALL
+  assert(0);
+#endif
     //TODO implement.
     // TODO: insert a new node here.
     nb_pages_freed += (len / 0x1000);
@@ -349,13 +359,17 @@ int tyche_munmap(void *start, size_t len) {
 }
 
 #define BRK_NB_PAGES 20
-static char brk_pool[BRK_NB_PAGES * PAGE_SIZE];
+static char brk_pool[BRK_NB_PAGES * PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
 static char *brk_cursor;
 static int brk_is_init = 0;
 
 size_t tyche_brk(void *end) {
+#ifdef TYCHE_RAW_MEM_SYSCALL
+  assert(0);
+#endif
     // Initialize if needed
     if (!brk_is_init) {
+        memset(brk_pool, 0, BRK_NB_PAGES * PAGE_SIZE);
         brk_cursor = brk_pool;
         brk_is_init = 1;
     }
@@ -377,6 +391,7 @@ size_t tyche_brk(void *end) {
 uint8_t bitmap[BITMAP_SIZE];
 
 void memory_init() {
+    memset(mempool, 0, mempool_size);
     memset(bitmap, 0, sizeof(bitmap)); // All pages are initially free
 }
 
@@ -420,8 +435,9 @@ void* memory_mmap(size_t size) {
     for (size_t i = start_page; i < start_page + pages_needed; i++) {
         set_bit(i);
     }
-
-    return mempool + (start_page * PAGE_SIZE);
+    void* ptr = mempool + (start_page * PAGE_SIZE);
+    memset(ptr, 0, pages_needed * PAGE_SIZE);
+    return ptr;
 }
 
 void memory_munmap(void* ptr, size_t size) {

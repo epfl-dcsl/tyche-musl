@@ -10,6 +10,7 @@
 #define TYCHE_NO_SYSCALL
 // Uncomment to run redis-musl outside of tyche using fork-exec
 //#define TYCHE_DO_INIT
+//#define TYCHE_RAW_MEM_SYSCALL
 
 #define TYCHE_SOCKET_FD 14
 #define TYCHE_CONNECTION_FD 15
